@@ -1,10 +1,10 @@
 use clap::{App, Arg};
-use home;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
-use std::error::Error;
+use std::error::Error as StdError;
 use std::fs::File;
+use std::io;
 use std::path::Path;
 
 #[derive(Deserialize)]
@@ -185,7 +185,7 @@ fn send_message(
     }
 }
 
-fn load_config() -> Result<Config, Box<dyn Error>> {
+fn load_config() -> Result<Config, Box<dyn StdError>> {
     let matrix_cfg_path = "matrix_link/config.yaml";
     let sys_config_path = Path::new("/etc").join(matrix_cfg_path);
     let user_config_path = dirs::config_dir()
@@ -198,7 +198,10 @@ fn load_config() -> Result<Config, Box<dyn Error>> {
     } else if user_config_path.exists() {
         f = File::open(user_config_path)?;
     } else {
-        Err();
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No configuration file could be found",
+        ));
     }
 
     Ok(serde_yaml::from_reader(f)?)
