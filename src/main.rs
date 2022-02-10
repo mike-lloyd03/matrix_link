@@ -1,48 +1,46 @@
 use clap::{App, Arg};
+use home;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::env;
+use serde_yaml;
+use std::error::Error;
+use std::fs::File;
+use std::path::Path;
 
-struct Creds {
+#[derive(Deserialize)]
+struct Config {
     username: String,
     password: String,
     host: String,
     room_name: String,
 }
+
 fn main() {
     let args = App::new("matrix_link")
-        .arg(Arg::with_name("message").required(true).index(1))
+        .about("Sends messages to a Matrix server")
+        .arg(
+            Arg::new("message")
+                .required(true)
+                .index(1)
+                .help("The message to be sent"),
+        )
         .get_matches();
 
     let message = args
         .value_of("message")
         .expect("message argument not provided")
         .to_string();
-
-    let username =
-        env::var("matrix_username").expect("must set 'matrix_username' environment variable");
-    let password =
-        env::var("matrix_password").expect("must set 'matrix_password' environment variable");
-    let host = env::var("matrix_host").expect("must set 'matrix_host' environment variable");
-    let room_name =
-        env::var("matrix_room_name").expect("must set 'matrix_room_name' environment variable");
-
-    let creds = Creds {
-        username,
-        password,
-        host,
-        room_name,
-    };
+    let config = load_config().expect("failed to load config file");
     let client = Client::new();
-    let access_token = login(&client, &creds).expect("unable to login");
-    let room_id = join_room(&client, &creds.host, &creds.room_name, &access_token)
+
+    let access_token = login(&client, &config).expect("unable to login");
+    let room_id = join_room(&client, &config.host, &config.room_name, &access_token)
         .expect("unable to get room id");
-    send_message(&client, &creds.host, &room_id, &access_token, message);
-    logout(&client, &creds, &access_token);
+    send_message(&client, &config.host, &room_id, &access_token, message);
+    logout(&client, &config, &access_token);
 }
 
-fn login(client: &Client, creds: &Creds) -> Option<String> {
+fn login(client: &Client, creds: &Config) -> Option<String> {
     #[derive(Serialize, Debug)]
     struct Login {
         r#type: String,
@@ -73,7 +71,7 @@ fn login(client: &Client, creds: &Creds) -> Option<String> {
         println!("successfully logged in");
         let resp_data = resp
             .json::<LoginResponse>()
-            .expect("could not deserialze response");
+            .expect("could not deserialize response");
         Some(resp_data.access_token)
     } else if resp.status().is_client_error() {
         println!("failed to authenticate");
@@ -87,7 +85,7 @@ fn login(client: &Client, creds: &Creds) -> Option<String> {
     }
 }
 
-fn logout(client: &Client, creds: &Creds, access_token: &String) -> Option<String> {
+fn logout(client: &Client, creds: &Config, access_token: &String) -> Option<String> {
     let url = format!(
         "http://{}/_matrix/client/r0/logout?access_token={}",
         creds.host, access_token
@@ -177,20 +175,31 @@ fn send_message(
         .expect("failed to join room");
 
     if resp.status().is_success() {
-        println!("{:?}", resp.json::<HashMap<String, String>>());
-        // Some(
-        //     resp.json::<JoinResponse>()
-        //         .expect("failed to parse response")
-        //         .room_id,
-        // )
+        println!("message sent successfully");
     } else if resp.status().is_client_error() {
         println!("failed to logout: {}", resp.status().as_str());
-        // None
     } else if resp.status().is_server_error() {
         println!("server error");
-        // None
     } else {
         println!("something went wrong");
-        // None
     }
+}
+
+fn load_config() -> Result<Config, Box<dyn Error>> {
+    let matrix_cfg_path = "matrix_link/config.yaml";
+    let sys_config_path = Path::new("/etc").join(matrix_cfg_path);
+    let user_config_path = dirs::config_dir()
+        .expect("cannot get user's config dir")
+        .join(matrix_cfg_path);
+
+    let f: File;
+    if sys_config_path.exists() {
+        f = File::open(sys_config_path)?;
+    } else if user_config_path.exists() {
+        f = File::open(user_config_path)?;
+    } else {
+        Err();
+    }
+
+    Ok(serde_yaml::from_reader(f)?)
 }
