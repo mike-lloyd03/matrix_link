@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_yaml;
 use std::error::Error as StdError;
 use std::fs::File;
-use std::io;
 use std::path::Path;
+use std::process::exit;
 
 #[derive(Deserialize)]
 struct Config {
@@ -30,7 +30,14 @@ fn main() {
         .value_of("message")
         .expect("message argument not provided")
         .to_string();
-    let config = load_config().expect("failed to load config file");
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Unable to load configuration file");
+            eprintln!("{}", err);
+            exit(1);
+        }
+    };
     let client = Client::new();
 
     let access_token = login(&client, &config).expect("unable to login");
@@ -189,19 +196,14 @@ fn load_config() -> Result<Config, Box<dyn StdError>> {
     let matrix_cfg_path = "matrix_link/config.yaml";
     let sys_config_path = Path::new("/etc").join(matrix_cfg_path);
     let user_config_path = dirs::config_dir()
-        .expect("cannot get user's config dir")
+        .expect("cannot get user's config directory")
         .join(matrix_cfg_path);
 
     let f: File;
     if sys_config_path.exists() {
         f = File::open(sys_config_path)?;
-    } else if user_config_path.exists() {
-        f = File::open(user_config_path)?;
     } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "No configuration file could be found",
-        ));
+        f = File::open(user_config_path)?;
     }
 
     Ok(serde_yaml::from_reader(f)?)
