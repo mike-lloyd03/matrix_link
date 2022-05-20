@@ -11,3 +11,6 @@ serde = { version = "1.0.136" , features = ["derive"] }
 serde_yaml = "0.8.23"
 clap = "3.0.14"
 dirs = "4.0.0"
+anyhow = "1.0.54"
+log = "0.4.17"
+simple_logger = "2.1.0"
